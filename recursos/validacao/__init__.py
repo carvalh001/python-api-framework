@@ -1,0 +1,1 @@
+# Validação de respostas (Assert)

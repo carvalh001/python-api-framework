@@ -1,0 +1,85 @@
+name: Testar API (pytest)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      url_base_api:
+        description: 'URL base da API (ex.: http://localhost:8000)'
+        required: false
+        default: 'http://localhost:8000'
+  schedule:
+    - cron: '0 6 * * *'
+
+env:
+  URL_BASE_API: ${{ github.event.inputs.url_base_api || 'http://localhost:8000' }}
+  USUARIO_LOGIN: maria
+  SENHA_LOGIN: '123456'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-api-${{ hashFiles('requirements.txt') }}
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Criar diretório de relatórios
+        run: mkdir -p reports
+
+      - name: Criar .env para CI
+        run: |
+          cp .env.example .env 2>/dev/null || true
+          echo "URL_BASE_API=${{ env.URL_BASE_API }}" >> .env
+          echo "USUARIO_LOGIN=${{ env.USUARIO_LOGIN }}" >> .env
+          echo "SENHA_LOGIN=${{ env.SENHA_LOGIN }}" >> .env
+
+      - name: Executar pytest
+        run: pytest testes/ --junitxml=reports/junit.xml
+        env:
+          URL_BASE_API: ${{ env.URL_BASE_API }}
+          USUARIO_LOGIN: ${{ env.USUARIO_LOGIN }}
+          SENHA_LOGIN: ${{ env.SENHA_LOGIN }}
+
+      - name: Publicar resultados (JUnit)
+        if: ${{ !cancelled() }}
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: reports/**/*.xml
+          check_name: Testes de API (pytest)
+          job_summary: true
+          fail_on: test failures
+          action_fail: false
+
+      - name: Gerar relatório HTML
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f reports/junit.xml ]; then
+            python gerar_relatorio.py
+          else
+            echo "junit.xml não encontrado; pulando relatório."
+          fi
+
+      - name: Upload artefato (relatórios)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-api
+          path: reports/
